@@ -1,0 +1,8 @@
+[package]
+name = "bevy-2d-rotation"
+version = "0.1.0"
+authors = ["Cameron Hart <cameron.hart@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+bevy = { git = "https://github.com/bevyengine/bevy", branch = "main" }
