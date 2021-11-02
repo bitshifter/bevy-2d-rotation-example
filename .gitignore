@@ -1,0 +1,6 @@
+/.cargo
+/.vs
+/.vscode
+/target
+/Session.vim
+*.swp

@@ -88,7 +88,7 @@ fn setup(
         })
         .insert(Player {
             movement_speed: 500.0,
-            rotation_speed: f32::to_radians(360.0),
+            rotation_speed: f32::to_radians(360.0), // 360 degrees / second
         });
 
     // snap to player
@@ -108,7 +108,7 @@ fn setup(
             ..Default::default()
         })
         .insert(RotateToPlayer {
-            rotation_speed: f32::to_radians(45.0),
+            rotation_speed: f32::to_radians(45.0), // 45 degrees / second
         });
 
     // Add walls
@@ -203,17 +203,21 @@ fn rotate_to_player_system(
         } else if side_dot_player < -f32::EPSILON {
             -1.0
         } else {
-            0.0
+            // already facing the player
+            continue;
         };
 
-        // calculate angle of rotation
-        // TODO: clamp so we don't overshoot
-        let rotation_angle = rotation_factor * config.rotation_speed * TIME_STEP;
+        // limit rotation so we don't overshoot the target
+        let enemy_forward = (enemy_transform.rotation * Vec3::Y).xy();
+        let forward_dot_player = enemy_forward.dot(to_player);
+        let max_angle = forward_dot_player.min(1.0).max(-1.0).acos(); // clamp acos for safety
+
+        // calculate angle of rotation with limit
+        let rotation_angle = rotation_factor * (config.rotation_speed * TIME_STEP).min(max_angle);
 
         // get the quaternion to rotate from the current enemy facing direction towards the
         // direction facing the player
-        let rotation_delta =
-            Quat::from_rotation_z(rotation_angle);
+        let rotation_delta = Quat::from_rotation_z(rotation_angle);
 
         // rotate the enemy to face the player
         enemy_transform.rotation *= rotation_delta;
