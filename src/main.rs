@@ -1,7 +1,40 @@
-use bevy::{core::FixedTimestep, math::const_vec2, prelude::*};
+use bevy::{
+    core::FixedTimestep,
+    math::{const_vec2, Vec3Swizzles},
+    prelude::*,
+};
 
 const TIME_STEP: f32 = 1.0 / 60.0;
 const BOUNDS: Vec2 = const_vec2!([1200.0, 640.0]);
+
+trait QuaternionEx {
+    fn from_rotation_arc_2d(from: Vec2, to: Vec2) -> Quat;
+}
+
+impl QuaternionEx for Quat {
+    // Adapted from `Quat::from_rotation_arc` for 2D case with clamp
+    fn from_rotation_arc_2d(from: Vec2, to: Vec2) -> Quat {
+        const ONE_MINUS_EPSILON: f32 = 1.0 - 2.0 * core::f32::EPSILON;
+        let dot = from.dot(to);
+        if dot > ONE_MINUS_EPSILON {
+            // 0° singulary: from ≈ to
+            Quat::IDENTITY
+        } else if dot < -ONE_MINUS_EPSILON {
+            // 180° singulary: from ≈ -to
+            const COS_FRAC_PI_2: f32 = 0.0;
+            const SIN_FRAC_PI_2: f32 = 1.0;
+            // rotation around z by PI radians
+            Quat::from_xyzw(0.0, 0.0, SIN_FRAC_PI_2, COS_FRAC_PI_2)
+        } else {
+            // vector3 cross where z=0
+            let z = from.x * to.y - to.x * from.y;
+            let w = 1.0 + dot;
+            // calculate length with x=0 and y=0 to normalize
+            let len_rcp = 1.0 / (z * z + w * w).sqrt();
+            Quat::from_xyzw(0.0, 0.0, z * len_rcp, w * len_rcp)
+        }
+    }
+}
 
 fn main() {
     App::new()
@@ -18,10 +51,10 @@ fn main() {
 }
 
 #[derive(Component)]
-struct Player;
+struct Enemy;
 
 #[derive(Component)]
-struct ShipConfig {
+struct Player {
     movement_speed: f32,
     rotation_speed: f32,
 }
@@ -47,11 +80,10 @@ fn setup(
             transform: Transform::from_xyz(0.0, 40.0 - BOUNDS.y / 2.0, 0.0),
             ..Default::default()
         })
-        .insert(ShipConfig {
+        .insert(Player {
             movement_speed: 500.0,
             rotation_speed: f32::to_radians(360.0),
-        })
-        .insert(Player);
+        });
 
     // enemy
     commands
@@ -59,10 +91,7 @@ fn setup(
             material: materials.add(enemy_handle.into()),
             ..Default::default()
         })
-        .insert(ShipConfig {
-            movement_speed: 0.0,
-            rotation_speed: f32::to_radians(180.0),
-        });
+        .insert(Enemy);
 
     // Add walls
     let wall_material = materials.add(Color::rgb(0.8, 0.8, 0.8).into());
@@ -100,7 +129,7 @@ fn setup(
 
 fn player_movement_system(
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&ShipConfig, &mut Transform), With<Player>>,
+    mut query: Query<(&Player, &mut Transform)>,
 ) {
     let (ship, mut transform) = query.single_mut();
 
@@ -140,19 +169,19 @@ fn player_movement_system(
 }
 
 fn enemy_movement_system(
-    mut query: Query<(&ShipConfig, &mut Transform), Without<Player>>,
+    mut query: Query<(&Enemy, &mut Transform), Without<Player>>,
     player_query: Query<&Transform, With<Player>>,
 ) {
     let player_transform = player_query.single();
 
-    for (_enemy_ship, mut enemy_transform) in query.iter_mut() {
-        let enemy_forward = enemy_transform.rotation * Vec3::Y;
+    for (_, mut enemy_transform) in query.iter_mut() {
+        let enemy_forward = (enemy_transform.rotation * Vec3::Y).xy();
         let player_direction =
-            (player_transform.translation - enemy_transform.translation).normalize();
+            (player_transform.translation.xy() - enemy_transform.translation.xy()).normalize();
 
         // get the quaternion to rotate from the current enemy facing direction to the direction
         // facing the player
-        let rotate_to_player = Quat::from_rotation_arc(enemy_forward, player_direction);
+        let rotate_to_player = Quat::from_rotation_arc_2d(enemy_forward, player_direction);
 
         // rotate the enemy to face the player
         enemy_transform.rotation *= rotate_to_player;
