@@ -44,14 +44,20 @@ fn main() {
             SystemSet::new()
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64))
                 .with_system(player_movement_system)
-                .with_system(enemy_movement_system),
+                .with_system(snap_to_player_system)
+                .with_system(rotate_to_player_system),
         )
         .add_system(bevy::input::system::exit_on_esc_system)
         .run();
 }
 
 #[derive(Component)]
-struct Enemy;
+struct SnapToPlayer;
+
+#[derive(Component)]
+struct RotateToPlayer {
+    rotation_speed: f32,
+}
 
 #[derive(Component)]
 struct Player {
@@ -85,13 +91,25 @@ fn setup(
             rotation_speed: f32::to_radians(360.0),
         });
 
-    // enemy
+    // snap to player
+    commands
+        .spawn_bundle(SpriteBundle {
+            material: materials.add(enemy_handle.clone().into()),
+            transform: Transform::from_xyz(0.0 - BOUNDS.x / 4.0, 0.0, 0.0),
+            ..Default::default()
+        })
+        .insert(SnapToPlayer);
+
+    // rotate to player
     commands
         .spawn_bundle(SpriteBundle {
             material: materials.add(enemy_handle.into()),
+            transform: Transform::from_xyz(0.0 + BOUNDS.x / 4.0, 0.0, 0.0),
             ..Default::default()
         })
-        .insert(Enemy);
+        .insert(RotateToPlayer {
+            rotation_speed: f32::to_radians(45.0),
+        });
 
     // Add walls
     let wall_material = materials.add(Color::rgb(0.8, 0.8, 0.8).into());
@@ -168,20 +186,54 @@ fn player_movement_system(
     transform.translation = transform.translation.min(extents).max(-extents);
 }
 
-fn enemy_movement_system(
-    mut query: Query<(&Enemy, &mut Transform), Without<Player>>,
+fn rotate_to_player_system(
+    mut query: Query<(&RotateToPlayer, &mut Transform), Without<Player>>,
     player_query: Query<&Transform, With<Player>>,
 ) {
     let player_transform = player_query.single();
 
-    for (_, mut enemy_transform) in query.iter_mut() {
+    for (config, mut enemy_transform) in query.iter_mut() {
+        let enemy_side = (enemy_transform.rotation * -Vec3::X).xy();
+        let to_player =
+            (player_transform.translation.xy() - enemy_transform.translation.xy()).normalize();
+
+        let side_dot_player = enemy_side.dot(to_player);
+        let rotation_factor = if side_dot_player > f32::EPSILON {
+            1.0
+        } else if side_dot_player < -f32::EPSILON {
+            -1.0
+        } else {
+            0.0
+        };
+
+        // calculate angle of rotation
+        // TODO: clamp so we don't overshoot
+        let rotation_angle = rotation_factor * config.rotation_speed * TIME_STEP;
+
+        // get the quaternion to rotate from the current enemy facing direction towards the
+        // direction facing the player
+        let rotation_delta =
+            Quat::from_rotation_z(rotation_angle);
+
+        // rotate the enemy to face the player
+        enemy_transform.rotation *= rotation_delta;
+    }
+}
+
+fn snap_to_player_system(
+    mut query: Query<&mut Transform, (With<SnapToPlayer>, Without<Player>)>,
+    player_query: Query<&Transform, With<Player>>,
+) {
+    let player_transform = player_query.single();
+
+    for mut enemy_transform in query.iter_mut() {
         let enemy_forward = (enemy_transform.rotation * Vec3::Y).xy();
-        let player_direction =
+        let to_player =
             (player_transform.translation.xy() - enemy_transform.translation.xy()).normalize();
 
         // get the quaternion to rotate from the current enemy facing direction to the direction
         // facing the player
-        let rotate_to_player = Quat::from_rotation_arc_2d(enemy_forward, player_direction);
+        let rotate_to_player = Quat::from_rotation_arc_2d(enemy_forward, to_player);
 
         // rotate the enemy to face the player
         enemy_transform.rotation *= rotate_to_player;
