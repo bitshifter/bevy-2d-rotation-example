@@ -12,7 +12,7 @@ trait QuaternionEx {
 }
 
 impl QuaternionEx for Quat {
-    // Adapted from `Quat::from_rotation_arc` for 2D case with clamp
+    // Adapted from `Quat::from_rotation_arc` for the 2D case
     fn from_rotation_arc_2d(from: Vec2, to: Vec2) -> Quat {
         const ONE_MINUS_EPSILON: f32 = 1.0 - 2.0 * core::f32::EPSILON;
         let dot = from.dot(to);
@@ -51,17 +51,23 @@ fn main() {
         .run();
 }
 
+/// player component
 #[derive(Component)]
-struct SnapToPlayer;
-
-#[derive(Component)]
-struct RotateToPlayer {
+struct Player {
+    /// linear speed in pixels per second
+    movement_speed: f32,
+    /// rotation speed in radians per second
     rotation_speed: f32,
 }
 
+/// snap to player ship behavior
 #[derive(Component)]
-struct Player {
-    movement_speed: f32,
+struct SnapToPlayer;
+
+/// rotate to face player ship behavior
+#[derive(Component)]
+struct RotateToPlayer {
+    /// rotation speed in radians per second
     rotation_speed: f32,
 }
 
@@ -77,7 +83,6 @@ fn setup(
 
     // cameras
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-    commands.spawn_bundle(UiCameraBundle::default());
 
     // ship
     commands
@@ -91,7 +96,7 @@ fn setup(
             rotation_speed: f32::to_radians(360.0), // 360 degrees / second
         });
 
-    // snap to player
+    // snap to player enemy spawns on the left
     commands
         .spawn_bundle(SpriteBundle {
             material: materials.add(enemy_handle.clone().into()),
@@ -100,7 +105,7 @@ fn setup(
         })
         .insert(SnapToPlayer);
 
-    // rotate to player
+    // rotate to player enemy spawns on the right
     commands
         .spawn_bundle(SpriteBundle {
             material: materials.add(enemy_handle.into()),
@@ -110,41 +115,9 @@ fn setup(
         .insert(RotateToPlayer {
             rotation_speed: f32::to_radians(45.0), // 45 degrees / second
         });
-
-    // Add walls
-    let wall_material = materials.add(Color::rgb(0.8, 0.8, 0.8).into());
-    let wall_thickness = 10.0;
-
-    // left
-    commands.spawn_bundle(SpriteBundle {
-        material: wall_material.clone(),
-        transform: Transform::from_xyz(-BOUNDS.x / 2.0, 0.0, 0.0),
-        sprite: Sprite::new(Vec2::new(wall_thickness, BOUNDS.y + wall_thickness)),
-        ..Default::default()
-    });
-    // right
-    commands.spawn_bundle(SpriteBundle {
-        material: wall_material.clone(),
-        transform: Transform::from_xyz(BOUNDS.x / 2.0, 0.0, 0.0),
-        sprite: Sprite::new(Vec2::new(wall_thickness, BOUNDS.y + wall_thickness)),
-        ..Default::default()
-    });
-    // bottom
-    commands.spawn_bundle(SpriteBundle {
-        material: wall_material.clone(),
-        transform: Transform::from_xyz(0.0, -BOUNDS.y / 2.0, 0.0),
-        sprite: Sprite::new(Vec2::new(BOUNDS.x + wall_thickness, wall_thickness)),
-        ..Default::default()
-    });
-    // top
-    commands.spawn_bundle(SpriteBundle {
-        material: wall_material,
-        transform: Transform::from_xyz(0.0, BOUNDS.y / 2.0, 0.0),
-        sprite: Sprite::new(Vec2::new(BOUNDS.x + wall_thickness, wall_thickness)),
-        ..Default::default()
-    });
 }
 
+// demonstrates applying rotation and movement based on keyboard input.
 fn player_movement_system(
     keyboard_input: Res<Input<KeyCode>>,
     mut query: Query<(&Player, &mut Transform)>,
@@ -171,21 +144,21 @@ fn player_movement_system(
     // update the ship rotation with our rotation delta
     transform.rotation *= rotation_delta;
 
-    // get the ship's forward vector by apply the current rotation to the ships initial facing vector
+    // get the ship's forward vector by applying the current rotation to the ships initial facing vector
     let movement_direction = transform.rotation * Vec3::Y;
-    // get the distance the ship will move based on direction, the ship's movement speed and delta
-    // time
+    // get the distance the ship will move based on direction, the ship's movement speed and delta time
     let movement_distance = movement_factor * ship.movement_speed * TIME_STEP;
     // create the change in translation using the new movement direction and distance
     let translation_delta = movement_direction * movement_distance;
     // update the ship translation with our new translation delta
     transform.translation += translation_delta;
 
-    // bound the ship within the walls
+    // bound the ship within the invisible level bounds
     let extents = Vec3::from((BOUNDS / 2.0, 0.0));
     transform.translation = transform.translation.min(extents).max(-extents);
 }
 
+// demonstrates rotating an enemy ship to face the player ship at a given rotation speed.
 fn rotate_to_player_system(
     mut query: Query<(&RotateToPlayer, &mut Transform), Without<Player>>,
     player_query: Query<&Transform, With<Player>>,
@@ -224,6 +197,7 @@ fn rotate_to_player_system(
     }
 }
 
+// demonstrates snapping the enemy ship to face the player ship immediately.
 fn snap_to_player_system(
     mut query: Query<&mut Transform, (With<SnapToPlayer>, Without<Player>)>,
     player_query: Query<&Transform, With<Player>>,
